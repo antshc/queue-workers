@@ -24,17 +24,14 @@ public static class Program
         ConcurrentDictionary<string, Channel<int>> regions = new();
 
         List<Task> regionWorkers = new List<Task>();
-        ConcurrentBag<Task> workers = new();
+        ConcurrentBag<Task> consumers = new();
         await foreach ((string, int) regionVpg in queue.Reader.ReadAllAsync())
         {
             var rq = regions.GetOrAdd(regionVpg.Item1, (key) =>
             {
                 var rq1 = Channel.CreateUnbounded<int>();
-                for (int i = 0; i < 6; i++)
-                {
-                    var w = CreateWorker(i, key, rq1);
-                    workers.Add(w);
-                }
+                var w = CreateConsumer(key, rq1);
+                consumers.Add(w);
                 return rq1;
             });
 
@@ -48,13 +45,23 @@ public static class Program
         Console.ReadLine();
     }
 
-    private static Task CreateWorker(int id, string regionKey, Channel<int> rq)
+    private static Task CreateConsumer(string regionKey, Channel<int> rq)
     {
         return Task.Run(async () =>
         {
-            await foreach (var workItem in rq.Reader.ReadAllAsync())
+            List<Task> workers = new();
+            while (await rq.Reader.WaitToReadAsync())
             {
-                Console.WriteLine($"Consume, Region: {regionKey}, worker: {id}, workItem: {workItem}");
+                for (int i = 0; i < 5; i++)
+                {
+                    var workItem = await rq.Reader.ReadAsync();
+                    workers.Add(Task.Run(() =>
+                    {
+                        Console.WriteLine($"Consume, Region: {regionKey}, worker: {workers.Count - 1}, workItem: {workItem}");
+                    }));
+                }
+                await Task.WhenAll(workers);
+                workers.Clear();
             }
         });
     }
