@@ -5,6 +5,7 @@ namespace worker;
 
 public static class Program
 {
+    public static readonly object l = new object();
     public static async Task Main()
     {
         Channel<(string, int)> queue = Channel.CreateUnbounded<(string, int)>();
@@ -49,15 +50,15 @@ public static class Program
     {
         return Task.Run(async () =>
         {
-            List<Task> workers = new();
             while (await rq.Reader.WaitToReadAsync())
             {
+                ConcurrentBag<Task> workers = new();
                 for (int i = 0; i < 5; i++)
                 {
                     var workItem = await rq.Reader.ReadAsync();
                     workers.Add(Task.Run(() =>
                     {
-                        Console.WriteLine($"Consume, Region: {regionKey}, worker: {workers.Count - 1}, workItem: {workItem}");
+                        Console.WriteLine($"Consume, Region: {regionKey}, worker: {i}, workItem: {workItem}");
                     }));
                 }
                 await Task.WhenAll(workers);
